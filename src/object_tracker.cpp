@@ -193,6 +193,7 @@ int main(int argc, char** argv) {
   //image_transport::Subscriber image_sub = it.subscribe("/my_camera/image_rect_color", 10, imageCallback);
   image_transport::Subscriber image_sub = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback);
   //image_transport::Subscriber image_sub2 = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback2);
+  std::cout << "start" << std::endl;
   ros::spin();
   return 0;
 }
