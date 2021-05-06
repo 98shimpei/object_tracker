@@ -154,7 +154,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
   if (is_tracking) {
     geometry_msgs::PointStamped look_at_point;
     look_at_point.header.stamp = ros::Time::now();
-    look_at_point.point.x = std::atan2(rectangle_value.x + rectangle_value.width/2.0 - image.cols/2.0, image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI)); //FOV 70x43(degree)
+    look_at_point.point.x = std::atan2(-(rectangle_value.x + rectangle_value.width/2.0 - image.cols/2.0), image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI)); //FOV 70x43(degree)
     look_at_point.point.y = std::atan2(rectangle_value.y + rectangle_value.height/2.0 - image.rows/2.0, image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI));
     look_at_point.point.z = -1.0;
     look_at_point_pub.publish(look_at_point);
