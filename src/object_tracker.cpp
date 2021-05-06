@@ -4,6 +4,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <geometry_msgs/PointStamped.h>
+#include <ar_track_alvar_msgs/AlvarMarkers.h>
 #include <cmath>
 
 cv::Mat image;
@@ -13,6 +14,7 @@ cv::Mat first_tracking_image;
 cv::Rect2i rectangle_value;
 bool is_click;
 bool is_tracking;
+bool init_flag = true;
 constexpr int error_buf = 5;
 
 image_transport::Publisher image_pub;
@@ -52,7 +54,6 @@ void mouse_callback(int event, int x, int y, int flags, void *userdata) {
 
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
-  static bool init_flag = true;
   int divide = 4;
   std::array<cv::Point2i, error_buf> min_error_point;
   std::array<double, error_buf> min_error;
@@ -64,7 +65,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
     ROS_ERROR("cv_bridge exception: %s", e.what());
   }
   //std::cout << "size: " << image.cols << ", " << image.rows << std::endl;
-  cv::resize(image, image, cv::Size(), 0.5, 0.5);
+  cv::resize(image, image, cv::Size(), 0.25, 0.25);
   //cv::cvtColor(image, image, CV_RGB2GRAY);
   cv::Mat dest_image = image.clone();
   //for(int i = 0; i < image.cols; i++){
@@ -113,9 +114,9 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
         }
 
         //dest_image.at<cv::Vec3b>(j + image.rows / 2, i + image.cols / 2)[0] = 255 / std::log(error+1);
-        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[0] = std::max(std::min((int)(50 * (log(error + 1) - log(20))), 255), 0);
-        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[1] = std::max(std::min((int)(50 * (log(error + 1) - log(20))), 255), 0);
-        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[2] = std::max(std::min((int)(50 * (log(error + 1) - log(20))), 255), 0);
+        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[0] = std::max(std::min((int)(40 * (log(error + 1) - log(20))), 255), 0);
+        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[1] = std::max(std::min((int)(40 * (log(error + 1) - log(20))), 255), 0);
+        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[2] = std::max(std::min((int)(40 * (log(error + 1) - log(20))), 255), 0);
 
         for (int k = 0; k < error_buf; k++) {
           if (min_error[k] < 0 || error < min_error[k]) {
@@ -148,22 +149,22 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
   //cvtColor(image, image, CV_RGB2GRAY);
   //cv::Canny(image, image, 50, 100);
 
-  cv::imshow("image", dest_image);
+  //cv::imshow("image", dest_image);
   image_pub.publish(cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::BGR8, dest_image).toImageMsg());
 
   if (is_tracking) {
     geometry_msgs::PointStamped look_at_point;
     look_at_point.header.stamp = ros::Time::now();
-    look_at_point.point.x = std::atan2(-(rectangle_value.x + rectangle_value.width/2.0 - image.cols/2.0), image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI)); //FOV 70x43(degree)
+    look_at_point.point.x = -std::atan2((rectangle_value.x + rectangle_value.width/2.0 - image.cols/2.0), image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI)); //FOV 70x43(degree)
     look_at_point.point.y = std::atan2(rectangle_value.y + rectangle_value.height/2.0 - image.rows/2.0, image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI));
-    look_at_point.point.z = -1.0;
+    look_at_point.point.z = 1.0;
     look_at_point_pub.publish(look_at_point);
   }
 
 
   if (init_flag) {
     is_click = false;
-    cv::setMouseCallback("image", mouse_callback);
+    //cv::setMouseCallback("image", mouse_callback);
     init_flag = false;
   }
   cv::waitKey(1);
@@ -175,9 +176,29 @@ void imageCallback2(const sensor_msgs::ImageConstPtr& msg) {
   catch (cv_bridge::Exception& e) {
     ROS_ERROR("cv_bridge exception: %s", e.what());
   }
-  cv::imshow("image2", image);
+  //cv::imshow("image2", image);
   cv::waitKey(1);
 }
+
+void arCallback(const ar_track_alvar_msgs::AlvarMarkers msg) {
+  if (!init_flag) {
+    for (int i = 0; i < msg.markers.size(); i++) {
+      if (msg.markers[i].id == 12) {
+        double x = msg.markers[i].pose.pose.position.x;
+        double y = msg.markers[i].pose.pose.position.y;
+        double z = msg.markers[i].pose.pose.position.z;
+        int px = (int)(image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI) * x/z) + image.cols/2.0 - 10;
+        int py = (int)(image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI) * y/z) + image.rows/2.0 - 10;
+        std::cout << x << " " << y << " " << z << " " << px << " " << py << " " << image.cols << " " << image.rows << std::endl;
+        rectangle_value = cv::Rect2i(px, py, 20, 20);
+        tracking_image = cv::Mat(image, rectangle_value).clone();
+        first_tracking_image = cv::Mat(image, rectangle_value).clone();
+        is_tracking = true;
+      }
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   bool isClick = false;
   rectangle_value = cv::Rect2i(0, 0, 0, 0);
@@ -190,9 +211,10 @@ int main(int argc, char** argv) {
   look_at_point_pub = nh.advertise<geometry_msgs::PointStamped>("/look_at_point", 10);
   //image_transport::Subscriber image_sub = it.subscribe("/camera/color/image_rect_color", 10, imageCallback);
   //image_transport::Subscriber image_sub2 = it.subscribe("/camera/color/image_rect_color", 10, imageCallback2);
-  //image_transport::Subscriber image_sub = it.subscribe("/my_camera/image_rect_color", 10, imageCallback);
+    //image_transport::Subscriber image_sub = it.subscribe("/my_camera/image_rect_color", 10, imageCallback);
   image_transport::Subscriber image_sub = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback);
   //image_transport::Subscriber image_sub2 = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback2);
+  ros::Subscriber ar_sub = nh.subscribe("/ar_pose_marker", 10, arCallback);
   std::cout << "start" << std::endl;
   ros::spin();
   return 0;
