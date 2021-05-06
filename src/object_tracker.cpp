@@ -3,6 +3,8 @@
 #include <image_transport/image_transport.h>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
+#include <geometry_msgs/PointStamped.h>
+#include <cmath>
 
 cv::Mat image;
 cv::Mat tracking_image;
@@ -14,6 +16,7 @@ bool is_tracking;
 constexpr int error_buf = 5;
 
 image_transport::Publisher image_pub;
+ros::Publisher look_at_point_pub;
 
 std::array<cv::Scalar, error_buf> colors = {
   cv::Scalar(255, 0, 0),
@@ -62,13 +65,14 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
   }
   //std::cout << "size: " << image.cols << ", " << image.rows << std::endl;
   cv::resize(image, image, cv::Size(), 0.5, 0.5);
-  cv::cvtColor(image, image, CV_RGB2GRAY);
+  //cv::cvtColor(image, image, CV_RGB2GRAY);
   cv::Mat dest_image = image.clone();
   //for(int i = 0; i < image.cols; i++){
   //  for(int j = 0; j < image.rows; j++){
   //    image.at<cv::Vec3b>(j, i) /= 2;
   //  }
   //}
+  
   if (is_click) {
     cv::rectangle(dest_image, rectangle_value, cv::Scalar(0, 0, 0), 3);
   }
@@ -77,13 +81,13 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
     cv::Mat mat = (cv::Mat_<double>(2,3)<<1.0, 0.0, 0, 0, 1, 0);
     cv::warpAffine(tracking_image, dest_image, mat, dest_image.size(), CV_INTER_LINEAR, cv::BORDER_TRANSPARENT);
 
-    cv::cvtColor(dest_image, dest_image, CV_GRAY2RGB);
+    //cv::cvtColor(dest_image, dest_image, CV_GRAY2RGB);
 
-    cv::Mat graymap = (cv::Mat_<double>(divide, divide));
+    cv::Mat graymap = (cv::Mat_<cv::Vec3d>(divide, divide));
     for (int i = 0; i < divide; i++){
       for (int j = 0; j < divide; j++){
-        cv::Mat hoge = cv::Mat(tracking_image, cv::Rect2i(tracking_image.cols*i/divide, tracking_image.rows*j/divide, tracking_image.cols*(i+1)/divide - tracking_image.cols*i/divide, tracking_image.rows*(j+1)/divide - tracking_image.rows*j/divide));
-        graymap.at<int>(j,i) = cv::mean(hoge)[0];
+        cv::Scalar hoge = cv::mean(cv::Mat(tracking_image, cv::Rect2i(tracking_image.cols*i/divide, tracking_image.rows*j/divide, tracking_image.cols*(i+1)/divide - tracking_image.cols*i/divide, tracking_image.rows*(j+1)/divide - tracking_image.rows*j/divide)));
+        graymap.at<cv::Vec3d>(j,i) = cv::Vec3d(hoge[0], hoge[1], hoge[2]);
       }
     }
 
@@ -102,8 +106,9 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
         int error = 0;
         for (int p = 0; p < divide; p++){
           for (int q = 0; q < divide; q++){
-            cv::Mat hoge = cv::Mat(test_image, cv::Rect2i(test_image.cols*p/divide, test_image.rows*q/divide, test_image.cols*(p+1)/divide - test_image.cols*p/divide, test_image.rows*(q+1)/divide - test_image.rows*q/divide));
-            error += std::pow(cv::mean(hoge)[0] - graymap.at<int>(q, p), 2);
+            cv::Scalar hoge = cv::mean(cv::Mat(test_image, cv::Rect2i(test_image.cols*p/divide, test_image.rows*q/divide, test_image.cols*(p+1)/divide - test_image.cols*p/divide, test_image.rows*(q+1)/divide - test_image.rows*q/divide)));
+            cv::Vec3d fuga = cv::Vec3d(hoge[0], hoge[1], hoge[2]) - graymap.at<cv::Vec3d>(q, p);
+            error += fuga.dot(fuga);
           }
         }
 
@@ -142,8 +147,20 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
 
   //cvtColor(image, image, CV_RGB2GRAY);
   //cv::Canny(image, image, 50, 100);
+
   cv::imshow("image", dest_image);
   image_pub.publish(cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::BGR8, dest_image).toImageMsg());
+
+  if (is_tracking) {
+    geometry_msgs::PointStamped look_at_point;
+    look_at_point.header.stamp = ros::Time::now();
+    look_at_point.point.x = std::atan2(rectangle_value.x + rectangle_value.width/2.0 - image.cols/2.0, image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI)); //FOV 70x43(degree)
+    look_at_point.point.y = std::atan2(rectangle_value.y + rectangle_value.height/2.0 - image.rows/2.0, image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI));
+    look_at_point.point.z = -1.0;
+    look_at_point_pub.publish(look_at_point);
+  }
+
+
   if (init_flag) {
     is_click = false;
     cv::setMouseCallback("image", mouse_callback);
@@ -166,13 +183,14 @@ int main(int argc, char** argv) {
   rectangle_value = cv::Rect2i(0, 0, 0, 0);
   is_tracking = false;
 
-  ros::init (argc, argv, "img_subscriber");
+  ros::init (argc, argv, "object_tracker");
   ros::NodeHandle nh("~");
   image_transport::ImageTransport it(nh);
   image_pub = it.advertise("dest_image", 10);
+  look_at_point_pub = nh.advertise<geometry_msgs::PointStamped>("/look_at_point", 10);
   //image_transport::Subscriber image_sub = it.subscribe("/camera/color/image_rect_color", 10, imageCallback);
   //image_transport::Subscriber image_sub2 = it.subscribe("/camera/color/image_rect_color", 10, imageCallback2);
-  //image_transport::Subscriber image_sub = it.subscribe("/my_camera/image_rect", 10, imageCallback);
+  //image_transport::Subscriber image_sub = it.subscribe("/my_camera/image_rect_color", 10, imageCallback);
   image_transport::Subscriber image_sub = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback);
   //image_transport::Subscriber image_sub2 = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback2);
   ros::spin();
