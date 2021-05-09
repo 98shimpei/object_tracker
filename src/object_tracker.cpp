@@ -17,6 +17,8 @@ bool is_tracking;
 bool init_flag = true;
 constexpr int error_buf = 5;
 
+int ar_look_timer = 0;
+
 image_transport::Publisher image_pub;
 ros::Publisher look_at_point_pub;
 
@@ -114,9 +116,13 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
         }
 
         //dest_image.at<cv::Vec3b>(j + image.rows / 2, i + image.cols / 2)[0] = 255 / std::log(error+1);
-        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[0] = std::max(std::min((int)(40 * (log(error + 1) - log(20))), 255), 0);
-        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[1] = std::max(std::min((int)(40 * (log(error + 1) - log(20))), 255), 0);
-        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[2] = std::max(std::min((int)(40 * (log(error + 1) - log(20))), 255), 0);
+        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[0] = std::max(std::min((int)(30 * (log(error + 1) - log(20))), 255), 0);
+        dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[1] = std::max(std::min((int)(30 * (log(error + 1) - log(20))), 255), 0);
+        if (ar_look_timer > 0) {
+          dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[2] = std::max(std::min((int)(30 * (log(error + 1) - log(20))), 255), 0);
+        } else {
+          dest_image.at<cv::Vec3b>(j + rectangle_value.height / 2, i + rectangle_value.width / 2)[2] = std::max(std::min((int)(0 * (log(error + 1) - log(20))), 255), 0);
+        }
 
         for (int k = 0; k < error_buf; k++) {
           if (min_error[k] < 0 || error < min_error[k]) {
@@ -137,9 +143,12 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
         }
       }
     }
+    if (ar_look_timer > 0) {
+      ar_look_timer--;
+    }
     std::cout << min_error[0] << " : " << max_error << std::endl;
     rectangle_value = cv::Rect2i(min_error_point[0].x, min_error_point[0].y, rectangle_value.width, rectangle_value.height);
-    tracking_image = cv::Mat(image, rectangle_value) * 0.05 + tracking_image * 0.95 + first_tracking_image * 0.0;
+    tracking_image = cv::Mat(image, rectangle_value) * 0.5 + tracking_image * 0.5 + first_tracking_image * 0.0;
 
     for (int i = 0; i < error_buf; i++){
       cv::rectangle(dest_image, cv::Rect2i(min_error_point[i].x, min_error_point[i].y, rectangle_value.width, rectangle_value.height), colors[i], 1);
@@ -154,7 +163,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
 
   if (is_tracking) {
     geometry_msgs::PointStamped look_at_point;
-    look_at_point.header.stamp = ros::Time::now();
+    look_at_point.header = msg->header;
     look_at_point.point.x = -std::atan2((rectangle_value.x + rectangle_value.width/2.0 - image.cols/2.0), image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI)); //FOV 70x43(degree)
     look_at_point.point.y = std::atan2(rectangle_value.y + rectangle_value.height/2.0 - image.rows/2.0, image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI));
     look_at_point.point.z = 1.0;
@@ -189,11 +198,12 @@ void arCallback(const ar_track_alvar_msgs::AlvarMarkers msg) {
         double z = msg.markers[i].pose.pose.position.z;
         int px = (int)(image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI) * x/z) + image.cols/2.0 - 10;
         int py = (int)(image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI) * y/z) + image.rows/2.0 - 10;
-        std::cout << x << " " << y << " " << z << " " << px << " " << py << " " << image.cols << " " << image.rows << std::endl;
+        //std::cout << x << " " << y << " " << z << " " << px << " " << py << " " << image.cols << " " << image.rows << std::endl;
         rectangle_value = cv::Rect2i(px, py, 20, 20);
         tracking_image = cv::Mat(image, rectangle_value).clone();
         first_tracking_image = cv::Mat(image, rectangle_value).clone();
         is_tracking = true;
+        ar_look_timer = 1;
       }
     }
   }
