@@ -90,6 +90,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
     cv::rectangle(dest_image, rectangle_value, cv::Scalar(0, 0, 0), 3);
   }
   
+  
   if (is_tracking){
     cv::Mat mat = (cv::Mat_<double>(2,3)<<1.0, 0.0, 0, 0, 1, 0);
     cv::warpAffine(tracking_image, dest_image, mat, dest_image.size(), CV_INTER_LINEAR, cv::BORDER_TRANSPARENT);
@@ -223,7 +224,7 @@ void stagCallback(const stag_ros::STagMarkerArray msg) {
   std::cout << "stag now" << std::endl;
   if (!init_flag) {
     for (int i = 0; i < msg.stag_array.size(); i++) {
-      if (msg.stag_array[i].id.data == 7) {
+      if (msg.stag_array[i].id.data == 0 && msg.stag_array[i].pose.position.z != 0) {
         double x = msg.stag_array[i].pose.position.x;
         double y = msg.stag_array[i].pose.position.y;
         double z = msg.stag_array[i].pose.position.z;
