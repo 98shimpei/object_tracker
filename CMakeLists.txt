@@ -15,7 +15,10 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   cv_bridge
   image_transport
+  carry_objects
+  stag_ros
 )
+#find_package(stag_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 
 ## System dependencies are found with CMake's conventions
@@ -108,10 +111,10 @@ find_package(OpenCV REQUIRED)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES object_tracker
-#  CATKIN_DEPENDS roscpp rospy std_msgs
-#  DEPENDS system_lib
+  #INCLUDE_DIRS include
+  #LIBRARIES object_tracker
+  #CATKIN_DEPENDS roscpp rospy std_msgs
+  #DEPENDS system_lib
 )
 
 ###########
@@ -212,4 +215,5 @@ include_directories(
 # catkin_add_nosetests(test)
 
 add_executable(object_tracker src/object_tracker.cpp)
+add_dependencies(object_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(object_tracker ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})

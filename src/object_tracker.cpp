@@ -4,8 +4,11 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <geometry_msgs/PointStamped.h>
+//#include "../../../devel/include/stag_ros/STagMarker.h"
+#include <stag_ros/STagMarkerArray.h>
 #include <ar_track_alvar_msgs/AlvarMarkers.h>
 #include <cmath>
+#include <string>
 
 cv::Mat image;
 cv::Mat tracking_image;
@@ -18,6 +21,13 @@ bool init_flag = true;
 constexpr int error_buf = 5;
 
 int ar_look_timer = 0;
+
+enum MarkerType {
+  AR = 1,
+  STAG,
+};
+
+MarkerType marker_type = AR;
 
 image_transport::Publisher image_pub;
 ros::Publisher look_at_point_pub;
@@ -209,13 +219,46 @@ void arCallback(const ar_track_alvar_msgs::AlvarMarkers msg) {
   }
 }
 
+void stagCallback(const stag_ros::STagMarkerArray msg) {
+  std::cout << "stag now" << std::endl;
+  if (!init_flag) {
+    for (int i = 0; i < msg.stag_array.size(); i++) {
+      if (msg.stag_array[i].id.data == 7) {
+        double x = msg.stag_array[i].pose.position.x;
+        double y = msg.stag_array[i].pose.position.y;
+        double z = msg.stag_array[i].pose.position.z;
+        int px = (int)(image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI) * x/z) + image.cols/2.0 - 10;
+        int py = (int)(image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI) * y/z) + image.rows/2.0 - 10;
+        std::cout << x << " " << y << " " << z << " " << px << " " << py << " " << image.cols << " " << image.rows << std::endl;
+        rectangle_value = cv::Rect2i(px, py, 20, 20);
+        tracking_image = cv::Mat(image, rectangle_value).clone();
+        first_tracking_image = cv::Mat(image, rectangle_value).clone();
+        is_tracking = true;
+        ar_look_timer = 1;
+      }
+    }
+  }
+}
+//void stagCallback(const ) {
+//}
+
 int main(int argc, char** argv) {
   bool isClick = false;
   rectangle_value = cv::Rect2i(0, 0, 0, 0);
   is_tracking = false;
+  ros::Subscriber ar_sub;
 
   ros::init (argc, argv, "object_tracker");
   ros::NodeHandle nh("~");
+
+  std::string marker_type_str = "ar";
+  nh.getParam("/object_tracker/marker_type", marker_type_str);
+  if (marker_type_str == "ar") {
+    marker_type = MarkerType::AR;
+  } else if (marker_type_str == "stag") {
+    marker_type = MarkerType::STAG;
+  }
+
   image_transport::ImageTransport it(nh);
   image_pub = it.advertise("dest_image", 10);
   look_at_point_pub = nh.advertise<geometry_msgs::PointStamped>("/look_at_point", 10);
@@ -224,7 +267,12 @@ int main(int argc, char** argv) {
     //image_transport::Subscriber image_sub = it.subscribe("/my_camera/image_rect_color", 10, imageCallback);
   image_transport::Subscriber image_sub = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback);
   //image_transport::Subscriber image_sub2 = it.subscribe("/rs_l515/color/image_raw", 10, imageCallback2);
-  ros::Subscriber ar_sub = nh.subscribe("/ar_pose_marker", 10, arCallback);
+
+  if (marker_type == MarkerType::AR) {
+    ar_sub = nh.subscribe("/ar_pose_marker", 10, arCallback);
+  } else if (marker_type == MarkerType::STAG){
+    ar_sub = nh.subscribe("/stag_ros/markers", 10, stagCallback);
+  }
   std::cout << "start" << std::endl;
   ros::spin();
   return 0;

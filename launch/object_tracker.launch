@@ -1,0 +1,23 @@
+<launch>
+	<arg name="marker_size" default="6.95" />
+	 <!-- 6.60 -->
+	<arg name="max_new_marker_error" default="0.08" />
+	<arg name="max_track_error" default="0.5" />
+
+	<arg name="cam_image_topic" default="/rs_l515/color/image_raw" />
+    <!-- ar_track_alvar が一定の形式のcamera_infoしか使えないような気がする？ -->
+	<arg name="cam_info_topic" default="/rs_l515/color/camera_info" />
+	<arg name="output_frame" default="/rs_l515_color_optical_frame" />
+
+  <node name="stag_node" pkg="stag_ros" type="stag_node" output="screen" required="true">
+    <!-- Place the correct yaml file here-->
+    <rosparam command="load" file="$(find stag_ros)/cfg/single.yaml"/>
+    <!-- Place the correct bundle file here-->
+    <rosparam command="load" file="$(find stag_ros)/cfg/single_config.yaml"/>
+  </node>
+
+  <node pkg="object_tracker" name="object_tracker" type="object_tracker" output="screen" >
+    <param name="marker_type" type="string" value="stag" />
+  </node>
+
+</launch>
