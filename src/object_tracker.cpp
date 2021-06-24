@@ -9,6 +9,7 @@
 #include <ar_track_alvar_msgs/AlvarMarkers.h>
 #include <cmath>
 #include <string>
+#include <tf/transform_listener.h>
 
 cv::Mat image;
 cv::Mat tracking_image;

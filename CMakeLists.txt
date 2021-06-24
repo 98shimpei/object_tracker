@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 #find_package(stag_ros REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(PCL 1.8 REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -127,6 +128,7 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -217,3 +219,7 @@ include_directories(
 add_executable(object_tracker src/object_tracker.cpp)
 add_dependencies(object_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(object_tracker ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
+add_executable(pcl_test src/pcl_test.cpp)
+add_dependencies(pcl_test ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(pcl_test ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
