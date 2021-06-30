@@ -17,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   carry_objects
   stag_ros
+  jsk_recognition_msgs
 )
 #find_package(stag_ros REQUIRED)
 find_package(OpenCV REQUIRED)

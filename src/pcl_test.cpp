@@ -18,18 +18,22 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <geometry_msgs/PointStamped.h>
+#include <jsk_recognition_msgs/PolygonArray.h>
 
 ros::Publisher pub;
+ros::Publisher polygon_pub;
 
 bool condition(pcl::Normal& n1, pcl::Normal& n2, pcl::PointXYZ& p1, pcl::PointXYZ& p2, float thr1, float thr2) {
-  //return std::abs(n1.normal_x * n2.normal_x + n1.normal_y * n2.normal_y + n1.normal_z * n2.normal_z) > thr1
+  //return pcl::isFinite(n1) && pcl::isFinite(n2) && pcl::isFinite(p1) && pcl::isFinite(p2) && std::abs(n1.normal_x * n2.normal_x + n1.normal_y * n2.normal_y + n1.normal_z * n2.normal_z) > thr1
   //  && std::sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z)) < thr2;
-  return std::abs(p1.z-p2.z) < thr2;
+  return pcl::isFinite(p1) && pcl::isFinite(p2) && std::abs(p1.z-p2.z) < thr2;
 }
 
 void 
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
+  std::cout << "cb" << std::endl;
+  ros::Time begin_time = ros::Time::now();
   // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
   //pcl::PointCloud<pcl::Normal> cloud;
@@ -71,13 +75,15 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 	normalEstimation.setNormalEstimationMethod(normalEstimation.AVERAGE_3D_GRADIENT);
 	// Depth threshold for computing object borders based on depth changes, in meters.
     // 深さの変化に基づきオブジェクトの境界を計算するための深さの閾値、単位はメートル
-	normalEstimation.setMaxDepthChangeFactor(0.02f);
+	normalEstimation.setMaxDepthChangeFactor(1.00f);
 	// Factor that influences the size of the area used to smooth the normals.
     // 法線を滑らかにするのに使われる領域サイズの係数
-	normalEstimation.setNormalSmoothingSize(3.0f);
+	normalEstimation.setNormalSmoothingSize(7.0f);
 
 	// Calculate the normals.　法線の計算
 	normalEstimation.compute(*normals);
+
+  ros::Time a_time = ros::Time::now();
 
   pcl::PointCloud<std::uint32_t>::Ptr labels (new pcl::PointCloud<std::uint32_t>());
   labels->width = cloud->width;
@@ -92,16 +98,18 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   std::vector<std::uint32_t> label_point_sum;
   label_point_sum.push_back(0);
 
-  float angle_threshold = std::cos(0.12);
-  float distance_threshold = 0.004;
+  float angle_threshold = std::cos(0.05);
+  float distance_threshold = 0.005;
+
+  //conditionを基準にラベリング
   for (int y = 0; y < 500; y+=2) {
     for (int x = 0; x < 500; x+=2) {
       int p1 = y*500+x;
       int p2 = y*500+x-2;
       int p3 = (y-2)*500+x;
       if (/*pcl::isFinite(normals->points[p1]) &&*/ pcl::isFinite(cloud->points[p1])) {
-        if (x != 0 && /*pcl::isFinite(normals->points[p2]) &&*/ pcl::isFinite(cloud->points[p2]) && condition(normals->points[p1], normals->points[p2], cloud->points[p1], cloud->points[p2], angle_threshold, distance_threshold)) {
-          if (y != 0 && /*pcl::isFinite(normals->points[p3]) &&*/ pcl::isFinite(cloud->points[p3]) &&  condition(normals->points[p1], normals->points[p3], cloud->points[p1], cloud->points[p3], angle_threshold, distance_threshold)) {
+        if (x != 0 && condition(normals->points[p1], normals->points[p2], cloud->points[p1], cloud->points[p2], angle_threshold, distance_threshold)) {
+          if (y != 0 && condition(normals->points[p1], normals->points[p3], cloud->points[p1], cloud->points[p3], angle_threshold, distance_threshold)) {
             if (label_table[labels->points[p2]] != label_table[labels->points[p3]]) {
               std:uint32_t nl = label_table[labels->points[p3]];
               while (nl != label_table[nl]) {
@@ -133,7 +141,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
             labels->points[p1] = label_table[labels->points[p2]];
             label_point_sum[label_table[labels->points[p2]]]++;
           }
-        } else if (y != 0 && /*pcl::isFinite(normals->points[p3]) &&*/ pcl::isFinite(cloud->points[p3]) && condition(normals->points[p1], normals->points[p3], cloud->points[p1], cloud->points[p3], angle_threshold, distance_threshold)) {
+        } else if (y != 0 && condition(normals->points[p1], normals->points[p3], cloud->points[p1], cloud->points[p3], angle_threshold, distance_threshold)) {
           labels->points[p1] = label_table[labels->points[p3]];
           label_point_sum[label_table[labels->points[p3]]]++;
         } else {
@@ -149,8 +157,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
     }
   }
 
-  //std::cout << "labeling 1" << std::endl;
-
+  //ラベルを統合
   for (int i = 1; i < new_label; i++) {
     std::uint32_t l = i;
     while (l != label_table[l]) {
@@ -162,6 +169,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
     label_table[i] = l;
   }
 
+  //label_tableを整理
   std::vector<std::uint32_t> sub_label_table(new_label, 0);
   std::vector<std::uint32_t> sub_label_point_sum(new_label, 0);
   std::uint32_t sub_new_label = 1;
@@ -193,20 +201,57 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 
   //std::cout << sum << std::endl;
 
-  for (int y = 0; y < 500; y++) {
-    for (int x = 0; x < 500; x++) {
+  std::vector<cv::Mat> binarized_image;
+  for (int i = 0; i < sub_new_label; i++) {
+    binarized_image.push_back(cv::Mat::zeros(250, 250, CV_8UC1));
+  }
+
+  for (int y = 2; y < 498; y+=2) {
+    for (int x = 2; x < 498; x+=2) {
       labels->points[y*500+x] = label_table[labels->points[y*500+x]];
+      binarized_image[labels->points[y*500+x]].at<uchar>(x/2, y/2) = 255;
+    }
+  }
+
+  std::vector<std::vector<cv::Point>> approx_vector;
+
+  for (int i = 1; i < sub_new_label; i++) {
+    cv::erode(binarized_image[i], binarized_image[i], cv::noArray(), cv::Point(-1, -1), 2);
+    std::vector<std::vector<cv::Point>> contours;
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(binarized_image[i], contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_NONE);
+    for (int j = 0; j < contours.size(); j++) {
+      if (hierarchy[j][3] == -1) {
+        if (cv::contourArea(contours[j]) > size_threshold / 2) {
+          std::vector<cv::Point> approx;
+          cv::approxPolyDP(contours[j], approx, 2.0, true);
+          if (approx.size() >= 3) {
+            approx_vector.push_back(approx);
+          }
+        }
+      } else {
+        if (cv::contourArea(contours[j]) > size_threshold) {
+          std::vector<cv::Point> approx;
+          cv::approxPolyDP(contours[j], approx, 2.0, true);
+          if (approx.size() >= 3) {
+            approx_vector.push_back(approx);
+          }
+        }
+      }
     }
   }
 
   //std::cout << "label num " << sub_new_label << " " << new_label << std::endl;
 
-  cv::Mat image = cv::Mat::zeros(250, 250, CV_8UC1);
+  cv::Mat image = cv::Mat::zeros(250, 250, CV_8UC3);
   for (int y = 0; y < 500; y+=2) {
     for (int x = 0; x < 500; x+=2) {
-      image.at<uchar>(x/2, y/2) = 30 + labels->points[y*500+x] * 29 % 226;
+      image.at<cv::Vec3b>(x/2, y/2)[0] = 30 + labels->points[y*500+x] * 29 % 226;
+      image.at<cv::Vec3b>(x/2, y/2)[1] = 30 + labels->points[y*500+x] * 67 % 226;
+      image.at<cv::Vec3b>(x/2, y/2)[2] = 30 + labels->points[y*500+x] * 47 % 226;
     }
   }
+  cv::drawContours(image, approx_vector, -1, cv::Scalar(255, 0, 0));
 
   //cv::imshow("title", image);
   //cv::waitKey(0);
@@ -268,7 +313,48 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   //pcl::toROSMsg(*cloud, pub_msg);
   //pub.publish (pub_msg);
 
-  pub.publish(cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::TYPE_8UC1, image).toImageMsg());
+  ros::Time b_time = ros::Time::now();
+
+  //pub.publish(cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::TYPE_8UC1, image).toImageMsg());
+  //pub.publish(cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::TYPE_8UC1, binarized_image[1]).toImageMsg());
+  pub.publish(cv_bridge::CvImage(std_msgs::Header(), "bgr8", image).toImageMsg());
+
+  jsk_recognition_msgs::PolygonArray polygon_msg;
+  polygon_msg.header = std_msgs::Header();
+  polygon_msg.header.frame_id = input->header.frame_id;
+  //for (int i = 0; i < approx_vector.size(); i++) {
+  for (int i = 0; i < 1; i++) {
+    if (approx_vector[i].size() < 3) {
+      continue;
+    }
+    geometry_msgs::PolygonStamped ps;
+    //polygon_msg.polygons[i].polygon.points.resize(approx_vector[i].size());
+    for (int j = 0; j < approx_vector[i].size(); j++) {
+      int p1 = 500 * (approx_vector[i][j].x*2) + (approx_vector[i][j].y*2);
+      if (pcl::isFinite(cloud->points[p1])) {
+        geometry_msgs::Point32 p;
+        p.x = cloud->points[p1].x;
+        p.y = cloud->points[p1].y;
+        p.z = cloud->points[p1].z;
+        ps.polygon.points.push_back(p);
+        //polygon_msg.polygons[i].polygon.points[j].x = cloud->points[p1].x;
+        //polygon_msg.polygons[i].polygon.points[j].y = cloud->points[p1].y;
+        //polygon_msg.polygons[i].polygon.points[j].z = cloud->points[p1].z;
+      } else {
+        std::cout << "infinite!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1111i " << std::endl;
+      }
+    }
+    ps.header = std_msgs::Header();
+    ps.header.frame_id = input->header.frame_id;
+    polygon_msg.polygons.push_back(ps);
+  }
+  polygon_pub.publish(polygon_msg);
+
+  ros::Time end_time = ros::Time::now();
+  std::cout << "all_time " << (end_time - begin_time).sec << "s " << (int)((end_time - begin_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "begin_a  " << (a_time - begin_time).sec << "s " << (int)((a_time - begin_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "a_b  " << (b_time - a_time).sec << "s " << (int)((b_time - a_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "b_end  " << (end_time - b_time).sec << "s " << (int)((end_time - b_time).nsec / 1000000) << "ms" << std::endl;
 }
 
 //void 
@@ -297,6 +383,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 //}
 
 void img_cb (const sensor_msgs::Image msg) {
+  std::cout << "cb" << std::endl;
   cv::Mat image;
   try {
     image = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::TYPE_32FC2)->image;
@@ -304,6 +391,43 @@ void img_cb (const sensor_msgs::Image msg) {
   catch (cv_bridge::Exception& e) {
     ROS_ERROR("cv_bridge exception: %s", e.what());
   }
+
+  std::cout << image.size().width << " " << image.size().height << std::endl;
+
+  int max = 100;
+  int min = 100;
+  cv::Mat pub_image = cv::Mat::zeros(500, 1000, CV_8UC1);
+  for (int y = 0; y < 1000; y++) {
+    for (int x = 0; x < 500; x++) {
+      int tmp = (int)(image.at<float>(x,y)*1000 + 150);
+      if (tmp > max) {
+        max = tmp;
+      } else if (tmp < min) {
+        min = tmp;
+      }
+      if (0 < tmp && tmp < 255) {
+        pub_image.at<uchar>(x, y) = tmp;
+      } else {
+        pub_image.at<uchar>(x, y) = 0;
+      }
+    }
+  }
+  std::cout << "max: " << max << " min: " << min << std::endl;
+
+  pub.publish(cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::TYPE_8UC1, pub_image).toImageMsg());
+}
+
+void polygon_cb (const jsk_recognition_msgs::PolygonArray& msg) {
+  cv::Mat pub_image = cv::Mat::zeros(500, 500, CV_8UC3);
+  for (int h = 0; h < msg.polygons.size(); h++) {
+    for (int i = 0; i < msg.polygons[h].polygon.points.size() - 1; i++) {
+      cv::line(pub_image, cv::Point((int)(msg.polygons[h].polygon.points[i].x * 50) + 250, (int)(msg.polygons[h].polygon.points[i].y*50)+250), cv::Point((int)(msg.polygons[h].polygon.points[i+1].x * 50) + 250, (int)(msg.polygons[h].polygon.points[i+1].y*50)+250), cv::Scalar(0,0,200), 3, 4);
+    }
+    cv::line(pub_image, cv::Point((int)(msg.polygons[h].polygon.points[0].x * 50) + 250, (int)(msg.polygons[h].polygon.points[0].y*50)+250), cv::Point((int)(msg.polygons[h].polygon.points[msg.polygons[h].polygon.points.size()-1].x * 50) + 250, (int)(msg.polygons[h].polygon.points[msg.polygons[h].polygon.points.size()-1].y*50)+250), cv::Scalar(0,0,200), 3, 4);
+  }
+  std::cout << "pub" << std::endl;
+  pub.publish(cv_bridge::CvImage(std_msgs::Header(), "bgr8", pub_image).toImageMsg());
+  polygon_pub.publish(msg);
 }
 
 int
@@ -315,10 +439,13 @@ main (int argc, char** argv)
 
   // Create a ROS subscriber for the input point cloud
   ros::Subscriber sub = nh.subscribe ("input", 1, cloud_cb);
+  //ros::Subscriber sub = nh.subscribe ("input", 1, img_cb);
+  //ros::Subscriber sub = nh.subscribe ("input", 1, polygon_cb);
 
   // Create a ROS publisher for the output point cloud
   //pub = nh.advertise<sensor_msgs::PointCloud2> ("output", 1);
   pub = nh.advertise<sensor_msgs::Image> ("output", 1);
+  polygon_pub = nh.advertise<jsk_recognition_msgs::PolygonArray> ("output_polygon", 1);
 
   // Spin
   ros::spin();
