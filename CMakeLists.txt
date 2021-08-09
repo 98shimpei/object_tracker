@@ -18,6 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
   carry_objects
   stag_ros
   jsk_recognition_msgs
+  safe_footstep_planner
 )
 #find_package(stag_ros REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -221,6 +222,6 @@ add_executable(object_tracker src/object_tracker.cpp)
 add_dependencies(object_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(object_tracker ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
-add_executable(pcl_test src/pcl_test.cpp)
+add_executable(pcl_test src/pcl_test.cpp src/polypartition.cpp)
 add_dependencies(pcl_test ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(pcl_test ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})

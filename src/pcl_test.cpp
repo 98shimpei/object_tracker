@@ -20,8 +20,13 @@
 #include <geometry_msgs/PointStamped.h>
 #include <jsk_recognition_msgs/PolygonArray.h>
 
+#include <list>
+#include "polypartition.h"
+#include <safe_footstep_planner/PolygonArray.h>
+
 ros::Publisher pub;
 ros::Publisher polygon_pub;
+ros::Publisher meshed_polygons_pub;
 
 bool condition(pcl::Normal& n1, pcl::Normal& n2, pcl::PointXYZ& p1, pcl::PointXYZ& p2, float thr1, float thr2) {
   //return pcl::isFinite(n1) && pcl::isFinite(n2) && pcl::isFinite(p1) && pcl::isFinite(p2) && std::abs(n1.normal_x * n2.normal_x + n1.normal_y * n2.normal_y + n1.normal_z * n2.normal_z) > thr1
@@ -214,32 +219,55 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   }
 
   std::vector<std::vector<cv::Point>> approx_vector;
+  std::list<TPPLPoly> polys, result;
 
   for (int i = 1; i < sub_new_label; i++) {
-    cv::erode(binarized_image[i], binarized_image[i], cv::noArray(), cv::Point(-1, -1), 2);
+    cv::morphologyEx(binarized_image[i], binarized_image[i], CV_MOP_OPEN, cv::noArray(), cv::Point(-1, -1), 4);
+    cv::morphologyEx(binarized_image[i], binarized_image[i], CV_MOP_OPEN, cv::noArray(), cv::Point(-1, -1), 4);
+    cv::erode(binarized_image[i], binarized_image[i], cv::noArray(), cv::Point(-1, -1), 1);
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
     cv::findContours(binarized_image[i], contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_NONE);
+
     for (int j = 0; j < contours.size(); j++) {
-      if (hierarchy[j][3] == -1) {
+      if (hierarchy[j][3] == -1) { //外側
         if (cv::contourArea(contours[j]) > size_threshold / 2) {
           std::vector<cv::Point> approx;
           cv::approxPolyDP(contours[j], approx, 2.0, true);
           if (approx.size() >= 3) {
             approx_vector.push_back(approx);
+            TPPLPoly poly;
+            poly.Init(approx.size());
+            for (int k = 0; k < approx.size(); k++) {
+              poly[k].x = approx[k].x;
+              poly[k].y = -approx[k].y;
+            }
+            polys.push_back(poly);
           }
         }
-      } else {
+      } else { //穴
         if (cv::contourArea(contours[j]) > size_threshold) {
           std::vector<cv::Point> approx;
           cv::approxPolyDP(contours[j], approx, 2.0, true);
           if (approx.size() >= 3) {
             approx_vector.push_back(approx);
+            TPPLPoly poly;
+            poly.Init(approx.size());
+            for (int k = 0; k < approx.size(); k++) {
+              poly[k].x = approx[k].x;
+              poly[k].y = -approx[k].y;
+            }
+            poly.SetHole(true);
+            polys.push_back(poly);
           }
         }
       }
     }
   }
+
+  TPPLPartition pp;
+  pp.Triangulate_EC(&polys, &result);
+  //result = polys;
 
   //std::cout << "label num " << sub_new_label << " " << new_label << std::endl;
 
@@ -322,24 +350,112 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   jsk_recognition_msgs::PolygonArray polygon_msg;
   polygon_msg.header = std_msgs::Header();
   polygon_msg.header.frame_id = input->header.frame_id;
+  safe_footstep_planner::PolygonArray meshed_polygons_msg;
+
+  //geometry_msgs::PolygonStamped ps;
+  //geometry_msgs::Point32 p;
+  //p.x = 0;
+  //p.y = 0;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 1.0;
+  //p.y = 0;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 1.0;
+  //p.y = 1.0;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 2.0;
+  //p.y = 2.0;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 1.0;
+  //p.y = 2.0;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 0.0;
+  //p.y = 1.0;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 0.6;
+  //p.y = 0.8;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = -0.6;
+  //p.y = 0.6;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = 0.6;
+  //p.y = 0.4;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //p.x = -2.0;
+  //p.y = 0.2;
+  //p.z = 0;
+  //ps.polygon.points.push_back(p);
+  //ps.header = std_msgs::Header();
+  //ps.header.frame_id = input->header.frame_id;
+  //polygon_msg.polygons.push_back(ps);
+
+  //geometry_msgs::PolygonStamped ps2;
+  //geometry_msgs::Point32 p2;
+  //p2.x = -1.0;
+  //p2.y = -1.0;
+  //p2.z = 0;
+  //ps2.polygon.points.push_back(p2);
+  //p2.x = 0.5;
+  //p2.y = 0.5;
+  //p2.z = 0;
+  //ps2.polygon.points.push_back(p2);
+  //p2.x = -1.0;
+  //p2.y = 1.0;
+  //p2.z = 0;
+  //ps2.polygon.points.push_back(p2);
+  //p2.x = -2.0;
+  //p2.y = 0.5;
+  //p2.z = 0;
+  //ps2.polygon.points.push_back(p2);
+  //ps2.header = std_msgs::Header();
+  //ps2.header.frame_id = input->header.frame_id;
+  //polygon_msg.polygons.push_back(ps2);
+
   //for (int i = 0; i < approx_vector.size(); i++) {
-  for (int i = 0; i < 1; i++) {
-    if (approx_vector[i].size() < 3) {
-      continue;
-    }
+  ////for (int i = 0; i < 1; i++) {
+  //  if (approx_vector[i].size() < 3) {
+  //    continue;
+  //  }
+  //  geometry_msgs::PolygonStamped ps;
+  //  //polygon_msg.polygons[i].polygon.points.resize(approx_vector[i].size());
+  //  for (int j = 0; j < approx_vector[i].size(); j++) {
+  //    int p1 = 500 * (approx_vector[i][j].x*2) + (approx_vector[i][j].y*2);
+  //    if (pcl::isFinite(cloud->points[p1])) {
+  //      geometry_msgs::Point32 p;
+  //      p.x = cloud->points[p1].x;
+  //      p.y = cloud->points[p1].y;
+  //      p.z = cloud->points[p1].z;
+  //      ps.polygon.points.push_back(p);
+  //    } else {
+  //      std::cout << "infinite!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1111i " << std::endl;
+  //    }
+  //  }
+  //  ps.header = std_msgs::Header();
+  //  ps.header.frame_id = input->header.frame_id;
+  //  polygon_msg.polygons.push_back(ps);
+  //}
+
+  int i;
+  std::list<TPPLPoly>::iterator iter;
+  for (iter = result.begin(), i = 0; iter != result.end(); iter++, i++) {
     geometry_msgs::PolygonStamped ps;
-    //polygon_msg.polygons[i].polygon.points.resize(approx_vector[i].size());
-    for (int j = 0; j < approx_vector[i].size(); j++) {
-      int p1 = 500 * (approx_vector[i][j].x*2) + (approx_vector[i][j].y*2);
+    for (int j = 0; j < iter->GetNumPoints(); j++) {
+      int p1 = 500 * (iter->GetPoint(j).x*2) + (-iter->GetPoint(j).y*2);
       if (pcl::isFinite(cloud->points[p1])) {
         geometry_msgs::Point32 p;
         p.x = cloud->points[p1].x;
         p.y = cloud->points[p1].y;
         p.z = cloud->points[p1].z;
         ps.polygon.points.push_back(p);
-        //polygon_msg.polygons[i].polygon.points[j].x = cloud->points[p1].x;
-        //polygon_msg.polygons[i].polygon.points[j].y = cloud->points[p1].y;
-        //polygon_msg.polygons[i].polygon.points[j].z = cloud->points[p1].z;
       } else {
         std::cout << "infinite!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1111i " << std::endl;
       }
@@ -347,8 +463,11 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
     ps.header = std_msgs::Header();
     ps.header.frame_id = input->header.frame_id;
     polygon_msg.polygons.push_back(ps);
+    meshed_polygons_msg.polygons.push_back(ps.polygon);
   }
+
   polygon_pub.publish(polygon_msg);
+  meshed_polygons_pub.publish(meshed_polygons_msg);
 
   ros::Time end_time = ros::Time::now();
   std::cout << "all_time " << (end_time - begin_time).sec << "s " << (int)((end_time - begin_time).nsec / 1000000) << "ms" << std::endl;
@@ -430,8 +549,67 @@ void polygon_cb (const jsk_recognition_msgs::PolygonArray& msg) {
   polygon_pub.publish(msg);
 }
 
-int
-main (int argc, char** argv)
+void polytest() {
+  std::cout << "hello" << std::endl;
+  std::list<TPPLPoly> polys, result;
+  TPPLPoly *poly;
+  poly = new TPPLPoly();
+  poly->Init(4);
+  (*poly)[0].x = 0.0;
+  (*poly)[0].y = 0.0;
+  (*poly)[1].x = 1.0;
+  (*poly)[1].y = 0.0;
+  (*poly)[2].x = 1.0;
+  (*poly)[2].y = 1.0;
+  (*poly)[3].x = 0.0;
+  (*poly)[3].y = 1.0;
+  polys.push_back(*poly);
+
+
+  TPPLPoly *hole;
+  hole = new TPPLPoly();
+  hole->Init(4);
+  (*hole)[0].x = 0.1;
+  (*hole)[0].y = 0.1;
+  (*hole)[1].x = 0.1;
+  (*hole)[1].y = 0.4;
+  (*hole)[2].x = 0.4;
+  (*hole)[2].y = 0.4;
+  (*hole)[3].x = 0.4;
+  (*hole)[3].y = 0.1;
+  hole->SetHole(true);
+  polys.push_back(*hole);
+
+  TPPLPoly *hole2;
+  hole2 = new TPPLPoly();
+  hole2->Init(4);
+  (*hole2)[0].x = 0.6;
+  (*hole2)[0].y = 0.6;
+  (*hole2)[1].x = 0.6;
+  (*hole2)[1].y = 0.9;
+  (*hole2)[2].x = 0.9;
+  (*hole2)[2].y = 0.9;
+  (*hole2)[3].x = 0.9;
+  (*hole2)[3].y = 0.6;
+  hole2->SetHole(true);
+  polys.push_back(*hole2);
+
+  std::cout << "hello2" << std::endl;
+
+  TPPLPartition pp;
+  pp.Triangulate_EC(&polys, &result);
+
+  std::list<TPPLPoly>::iterator iter;
+  for (iter = result.begin(); iter != result.end(); iter++) {
+    std::cout << "hoge" << std::endl;
+    for (int i = 0; i < iter->GetNumPoints(); i++) {
+      std::cout << iter->GetPoint(i).x << ", " << iter->GetPoint(i).y << std::endl;
+    }
+  }
+  std::cout << "hello3" << std::endl;
+}
+
+int main (int argc, char** argv)
 {
   // Initialize ROS
   ros::init (argc, argv, "my_pcl_tutorial");
@@ -446,7 +624,12 @@ main (int argc, char** argv)
   //pub = nh.advertise<sensor_msgs::PointCloud2> ("output", 1);
   pub = nh.advertise<sensor_msgs::Image> ("output", 1);
   polygon_pub = nh.advertise<jsk_recognition_msgs::PolygonArray> ("output_polygon", 1);
+  meshed_polygons_pub = nh.advertise<safe_footstep_planner::PolygonArray> ("meshed_polygons", 1);
+
+  std::cout << "hello" << std::endl;
 
   // Spin
   ros::spin();
+
+  //polytest();
 }
