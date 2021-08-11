@@ -37,7 +37,6 @@ bool condition(pcl::Normal& n1, pcl::Normal& n2, pcl::PointXYZ& p1, pcl::PointXY
 void 
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
-  std::cout << "cb" << std::endl;
   ros::Time begin_time = ros::Time::now();
   // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
@@ -53,22 +52,45 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   //int i = 500 * 100 + 300;
   //std::cout << cloud.points[i].normal_x << " " << cloud.points[i].normal_y << " " << cloud.points[i].normal_z << " " << cloud.points[i].curvature << std::endl;
 
-  //float x_offset = cloud->points[0].x;
-  //float y_offset = cloud->points[0].y;
-  //float before_z = cloud->points[0].z;
-  //for (int i = 0; i < 500; i++) {
-  //  for (int j = 0; j < 500; j++) {
-  //    if (!pcl::isFinite(cloud->points[i*500+j])) {
-  //      std::cout << "nan value: " << j << " " << i << " " << cloud->points[i*500+j].x << " " << cloud->points[i*500+j].y << " " << cloud->points[i*500+j].z << std::endl;
-  //      cloud->points[i*500+j].z = before_z;
-  //    } else {
-  //      before_z = cloud->points[i*500+j].z;
-  //    }
-  //    cloud->points[i*500+j].x = x_offset + 0.01*j;
-  //    cloud->points[i*500+j].y = y_offset + 0.01*i;
-  //  }
-  //}
+  float x_diff = 0;
+  float y_diff = 0;
+  for (int i = 0; i < 500; i++) {
+    for (int j = 1; j < 500; j++) {
+      if (pcl::isFinite(cloud->points[i*500+j])) {
+        if (x_diff == 0 && pcl::isFinite(cloud->points[i*500+j-1])) { //連続してFiniteな部分を探し、diffを計算
+          x_diff = cloud->points[i*500+j].x - cloud->points[i*500+j-1].x;
+          y_diff = cloud->points[i*500+j].y - cloud->points[i*500+j-1].y;
+        }
+      } else {
+        //std::cout << "nan value: " << j << " " << i << " " << cloud->points[i*500+j].x << " " << cloud->points[i*500+j].y << " " << cloud->points[i*500+j].z << std::endl;
+        if (x_diff != 0 && pcl::isFinite(cloud->points[i*500+j-1])) { //inFiniteな部分には隣のzをコピー
+          cloud->points[i*500+j].x = cloud->points[i*500+j-1].x + x_diff;
+          cloud->points[i*500+j].y = cloud->points[i*500+j-1].y + y_diff;
+          cloud->points[i*500+j].z = cloud->points[i*500+j-1].z;
+        }
+      }
+    }
+  }
+  for (int i = 499; i >= 0; i--) {//逆順
+    for (int j = 498; j >= 0; j--) {
+      if ((!pcl::isFinite(cloud->points[i*500+j])) && pcl::isFinite(cloud->points[i*500+j+1])) { //inFiniteな部分には隣のzをコピー
+        cloud->points[i*500+j].x = cloud->points[i*500+j+1].x - x_diff;
+        cloud->points[i*500+j].y = cloud->points[i*500+j+1].y - y_diff;
+        cloud->points[i*500+j].z = cloud->points[i*500+j+1].z;
+      }
+    }
+  }
+  for (int i = 0; i < 500; i++) {//逆順
+    for (int j = 0; j < 500; j++) {
+      if (!pcl::isFinite(cloud->points[i*500+j])) {
+        std::cout << "infinite aruyo " << i << " " << j << std::endl;
+      }
+    }
+  }
 
+  if (x_diff == 0) {
+    std::cout << "yabeeeeeeee" << std::endl;
+  }
 
   pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
   pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> normalEstimation;
@@ -104,7 +126,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   label_point_sum.push_back(0);
 
   float angle_threshold = std::cos(0.05);
-  float distance_threshold = 0.005;
+  float distance_threshold = 0.008;
 
   //conditionを基準にラベリング
   for (int y = 0; y < 500; y+=2) {
@@ -222,9 +244,10 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   std::list<TPPLPoly> polys, result;
 
   for (int i = 1; i < sub_new_label; i++) {
+    cv::morphologyEx(binarized_image[i], binarized_image[i], CV_MOP_CLOSE, cv::noArray(), cv::Point(-1, -1), 1);
     cv::morphologyEx(binarized_image[i], binarized_image[i], CV_MOP_OPEN, cv::noArray(), cv::Point(-1, -1), 4);
+    cv::erode(binarized_image[i], binarized_image[i], cv::noArray(), cv::Point(-1, -1), 3);
     cv::morphologyEx(binarized_image[i], binarized_image[i], CV_MOP_OPEN, cv::noArray(), cv::Point(-1, -1), 4);
-    cv::erode(binarized_image[i], binarized_image[i], cv::noArray(), cv::Point(-1, -1), 1);
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
     cv::findContours(binarized_image[i], contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_NONE);
