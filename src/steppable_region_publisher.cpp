@@ -217,14 +217,15 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   std::list<TPPLPoly>::iterator iter;
   for (iter = result.begin(), i = 0; iter != result.end(); iter++, i++) {
     geometry_msgs::PolygonStamped ps;
-    for (int j = 0; j < iter->GetNumPoints(); j++) {
+    //for (int j = 0; j < iter->GetNumPoints(); j++) {
+    for (int j = iter->GetNumPoints() - 1; j >= 0; j--) {
       image.at<cv::Vec3b>(-iter->GetPoint(j).y, iter->GetPoint(j).x)[2] = 255;
       int p1 = 500 * (-iter->GetPoint(j).y*2) + (iter->GetPoint(j).x*2);
       if (pcl::isFinite(cloud->points[p1])) {
         geometry_msgs::Point32 p;
         p.x = cloud->points[p1].x;
         p.y = cloud->points[p1].y;
-        p.z = cloud->points[p1].z;
+        p.z = 0;
         ps.polygon.points.push_back(p);
       } else {
         std::cout << "infinite!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1111i " << std::endl;
