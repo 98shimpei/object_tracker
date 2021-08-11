@@ -225,3 +225,7 @@ target_link_libraries(object_tracker ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 add_executable(pcl_test src/pcl_test.cpp src/polypartition.cpp)
 add_dependencies(pcl_test ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(pcl_test ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+
+add_executable(steppable_region_publisher src/steppable_region_publisher.cpp src/polypartition.cpp)
+add_dependencies(steppable_region_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(steppable_region_publisher ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
