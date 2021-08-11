@@ -225,9 +225,9 @@ void stagCallback(const stag_ros::STagMarkerArray msg) {
   std::cout << "stag now" << std::endl;
   if (!init_flag) {
     for (int i = 0; i < msg.stag_array.size(); i++) {
-      if (msg.stag_array[i].id.data == 0 && msg.stag_array[i].pose.position.z != 0) {
+      if (msg.stag_array[i].id.data == 4 && msg.stag_array[i].pose.position.z != 0) {
         double x = msg.stag_array[i].pose.position.x;
-        double y = msg.stag_array[i].pose.position.y;
+        double y = msg.stag_array[i].pose.position.y - 0.1;
         double z = msg.stag_array[i].pose.position.z;
         int px = (int)(image.cols/2.0*std::tan((90.0-(70/2.0))/360.0*2*M_PI) * x/z) + image.cols/2.0 - 10;
         int py = (int)(image.rows/2.0*std::tan((90.0-(43/2.0))/360.0*2*M_PI) * y/z) + image.rows/2.0 - 10;
