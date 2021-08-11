@@ -125,7 +125,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   }
 
 
-  cv::medianBlur(average_image, average_image, 3); //中央値を取る(x,y座標は5x5の中心になってしまう)
+  cv::medianBlur(average_image, average_image, 3); //中央値を取る(x,y座標は3x3の中心になってしまう)
 
   cv::Mat binarized_image = cv::Mat::zeros(250, 250, CV_8UC1);
   cv::Mat image = cv::Mat::zeros(250, 250, CV_8UC3);
@@ -143,7 +143,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
           }
         }
       }
-      if (std::abs(std::atan2(max[2]-min[2], std::sqrt((max[0]-min[0])*(max[0]-min[0]) + (max[1]-min[1])*(max[1]-min[1])))) < 0.2) {
+      if (std::abs(std::atan2(max[2]-min[2], std::sqrt((max[0]-min[0])*(max[0]-min[0]) + (max[1]-min[1])*(max[1]-min[1])))) < 0.2) { //領域内(3x3の平均が3x3個、数独みたいな感じ)の最大傾きでsteppableか判断
         binarized_image.at<uchar>(y, x) = 255;
         image.at<cv::Vec3b>(y, x)[0] = 100;
         image.at<cv::Vec3b>(y, x)[1] = 100;
