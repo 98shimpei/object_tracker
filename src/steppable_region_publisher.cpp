@@ -34,6 +34,11 @@ bool condition(pcl::Normal& n1, pcl::Normal& n2, pcl::PointXYZ& p1, pcl::PointXY
   return pcl::isFinite(p1) && pcl::isFinite(p2) && std::abs(p1.z-p2.z) < thr2;
 }
 
+float calc_tilt(cv::Vec3f center, cv::Vec3f tmpvec) {
+  //return std::abs(std::atan2(tmpvec[2] - center[2], std::sqrt((tmpvec[0]-center[0])*(tmpvec[0]-center[0]) + (tmpvec[1]-center[1])*(tmpvec[1]-center[1]))));
+  return std::abs(std::atan2(center[2] - tmpvec[2], 0.06));
+}
+
 void 
 cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
@@ -124,51 +129,79 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
     }
   }
 
+  ros::Time b_time = ros::Time::now();
 
-  cv::medianBlur(average_image, average_image, 3); //中央値を取る(x,y座標は3x3の中心になってしまう)
+  //cv::medianBlur(average_image, average_image, 3); //中央値を取る(x,y座標は3x3の中心になってしまう)
+  cv::blur(average_image, average_image, cv::Size(3, 3));
+
+  ros::Time c_time = ros::Time::now();
 
   cv::Mat binarized_image = cv::Mat::zeros(250, 250, CV_8UC1);
   cv::Mat image = cv::Mat::zeros(250, 250, CV_8UC3);
+  int steppable_range = 3;
+  float steppable_edge_height = steppable_range*0.02*std::tan(0.3);
+  float steppable_corner_height = steppable_range*0.02*std::sqrt(2)*std::tan(0.3);
+  float steppable_around_edge_range = 12/2;//[cm]/[cm]
+  float steppable_around_corner_range = (int)(12/std::sqrt(8));//[cm]/[cm]
+  float steppable_around_height_diff = 0.025;//[m]
   for (int x = 4; x < (250-4); x++) {
     for (int y = 4; y < (250-4); y++) {
-      cv::Vec3f max = average_image.at<cv::Vec3f>(y, x);
-      cv::Vec3f min = average_image.at<cv::Vec3f>(y, x);
-      for (int i = -3; i <= 3; i+=3) {
-        for (int j = -3; j <= 3; j+=3) {
-          if (max[2] < average_image.at<cv::Vec3f>(y+j, x+i)[2]) {
-            max = average_image.at<cv::Vec3f>(y+j, x+i);
-          }
-          if (min[2] > average_image.at<cv::Vec3f>(y+j, x+i)[2]) {
-            min = average_image.at<cv::Vec3f>(y+j, x+i);
-          }
-        }
+      cv::Vec3f center = average_image.at<cv::Vec3f>(y, x);
+      
+      if (
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y+steppable_range, x+steppable_range)[2]) > steppable_corner_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y+steppable_range, x-steppable_range)[2]) > steppable_corner_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y-steppable_range, x+steppable_range)[2]) > steppable_corner_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y-steppable_range, x-steppable_range)[2]) > steppable_corner_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y+steppable_range, x+0)[2]) > steppable_edge_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y-steppable_range, x+0)[2]) > steppable_edge_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y+0, x+steppable_range)[2]) > steppable_edge_height ||
+        std::abs(center[2] - average_image.at<cv::Vec3f>(y+0, x-steppable_range)[2]) > steppable_edge_height) {
+        continue;
       }
-      if (std::abs(std::atan2(max[2]-min[2], std::sqrt((max[0]-min[0])*(max[0]-min[0]) + (max[1]-min[1])*(max[1]-min[1])))) < 0.2) { //領域内(3x3の平均が3x3個、数独みたいな感じ)の最大傾きでsteppableか判断
-        binarized_image.at<uchar>(y, x) = 255;
-        image.at<cv::Vec3b>(y, x)[0] = 100;
-        image.at<cv::Vec3b>(y, x)[1] = 100;
-        image.at<cv::Vec3b>(y, x)[2] = 100;
+
+      image.at<cv::Vec3b>(y, x)[0] = 100;
+      image.at<cv::Vec3b>(y, x)[1] = 100;
+      image.at<cv::Vec3b>(y, x)[2] = 100;
+      if (
+        average_image.at<cv::Vec3f>(y+(int)(steppable_around_edge_range), x)[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y, x+(int)(steppable_around_edge_range))[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y-(int)(steppable_around_edge_range), x)[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y, x-(int)(steppable_around_edge_range))[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y+(int)(steppable_around_corner_range), x+(int)(steppable_around_corner_range))[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y+(int)(steppable_around_corner_range), x-(int)(steppable_around_corner_range))[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y-(int)(steppable_around_corner_range), x+(int)(steppable_around_corner_range))[2] - center[2] > steppable_around_height_diff ||
+        average_image.at<cv::Vec3f>(y-(int)(steppable_around_corner_range), x-(int)(steppable_around_corner_range))[2] - center[2] > steppable_around_height_diff) {
+        continue;
       }
+      binarized_image.at<uchar>(y, x) = 255;
+      image.at<cv::Vec3b>(y, x)[0] = 200;
+      image.at<cv::Vec3b>(y, x)[1] = 200;
+      image.at<cv::Vec3b>(y, x)[2] = 200;
     }
   }
+
+  ros::Time d_time = ros::Time::now();
 
   std::vector<std::vector<cv::Point>> approx_vector;
   std::list<TPPLPoly> polys, result;
 
   cv::morphologyEx(binarized_image, binarized_image, CV_MOP_CLOSE, cv::noArray(), cv::Point(-1, -1), 2);
   cv::morphologyEx(binarized_image, binarized_image, CV_MOP_OPEN, cv::noArray(), cv::Point(-1, -1), 2);
-  cv::erode(binarized_image, binarized_image, cv::noArray(), cv::Point(-1, -1), 1);
+  cv::erode(binarized_image, binarized_image, cv::noArray(), cv::Point(-1, -1), 2);
   cv::morphologyEx(binarized_image, binarized_image, CV_MOP_OPEN, cv::noArray(), cv::Point(-1, -1), 2);
   std::vector<std::vector<cv::Point>> contours;
   std::vector<cv::Vec4i> hierarchy;
   cv::findContours(binarized_image, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_NONE);
+
+  ros::Time e_time = ros::Time::now();
 
   int size_threshold = 100;
   for (int j = 0; j < contours.size(); j++) {
     if (hierarchy[j][3] == -1) { //外側
       if (cv::contourArea(contours[j]) > size_threshold) {
         std::vector<cv::Point> approx;
-        cv::approxPolyDP(contours[j], approx, 3.0, true);
+        cv::approxPolyDP(contours[j], approx, 2.5, true);
         if (approx.size() >= 3) {
           approx_vector.push_back(approx);
           TPPLPoly poly;
@@ -206,7 +239,7 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   //std::cout << "label num " << sub_new_label << " " << new_label << std::endl;
 
   cv::drawContours(image, approx_vector, -1, cv::Scalar(255, 0, 0));
-  ros::Time b_time = ros::Time::now();
+  ros::Time f_time = ros::Time::now();
 
   jsk_recognition_msgs::PolygonArray polygon_msg;
   polygon_msg.header = std_msgs::Header();
@@ -245,7 +278,11 @@ cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
   std::cout << "all_time " << (end_time - begin_time).sec << "s " << (int)((end_time - begin_time).nsec / 1000000) << "ms" << std::endl;
   std::cout << "begin_a  " << (a_time - begin_time).sec << "s " << (int)((a_time - begin_time).nsec / 1000000) << "ms" << std::endl;
   std::cout << "a_b  " << (b_time - a_time).sec << "s " << (int)((b_time - a_time).nsec / 1000000) << "ms" << std::endl;
-  std::cout << "b_end  " << (end_time - b_time).sec << "s " << (int)((end_time - b_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "b_c  " << (c_time - b_time).sec << "s " << (int)((c_time - b_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "c_d  " << (d_time - c_time).sec << "s " << (int)((d_time - c_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "d_e  " << (e_time - d_time).sec << "s " << (int)((e_time - d_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "e_f  " << (f_time - e_time).sec << "s " << (int)((f_time - e_time).nsec / 1000000) << "ms" << std::endl;
+  std::cout << "f_end  " << (end_time - f_time).sec << "s " << (int)((end_time - f_time).nsec / 1000000) << "ms" << std::endl;
 }
 
 //void 
